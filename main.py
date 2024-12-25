@@ -7,8 +7,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
-from datetime import datetime
 import time
+from datetime import datetime, timedelta
+import re
 
 # Налаштування вебдрайвера
 options = webdriver.ChromeOptions()
@@ -105,6 +106,7 @@ def get_data_from_user(address):
         #check amount
         if amount == "NOT FOUND":
             parsed_amount = "NOT FOUND"
+            message_send = False
         else:
             parsed_amount = parse_price(amount)
 
@@ -116,7 +118,29 @@ def get_data_from_user(address):
                           f"Amount: {parsed_amount:.2f} $\n" \
                           f"Token: {token}\n" \
                           f"Token address: {token_address} \n"
+                message_send = True
+            else:
+                message_send = False
+
+
+
+        problem = any(field == "NOT FOUND" for field in [time_of_tx, amount, token, action_text, token_address])
+
+
+        if not transaction_exists(address, time_of_tx, action_text, amount, token, token_address):
+            if message_send==True:
                 send_message(message)
+
+            save_transaction(
+                user_address=address,
+                time=time_of_tx,
+                action=action_text,
+                amount=amount,
+                token=token,
+                token_address=token_address,
+                message_send=message_send,
+                problem=problem
+            )
 
         print(
               f"Time: {time_of_tx} \n"
@@ -130,6 +154,75 @@ def get_data_from_user(address):
         print(f"Error while parsing: {e}")
 
 
+# Функція для збереження транзакції в базу даних
+def save_transaction(user_address, time, action, amount, token, token_address, message_send, problem):
+    try:
+        new_transaction = Transactions(
+            user_address=user_address,
+            time=time,
+            action=action,
+            amount=amount,
+            token=token,
+            token_address=token_address,
+            message_send=message_send,
+            problem=problem
+        )
+        session.add(new_transaction)
+        session.commit()
+        print("Transaction saved to database.")
+    except Exception as e:
+        print(f"Error while saving transaction: {e}")
+
+
+
+# Функція для парсингу часу
+def parse_time(time_str):
+    now = datetime.now()
+
+    # Якщо формат - XXmins XXsecs ago або Xhr Xmin ago
+    if "ago" in time_str:
+        time_match = re.match(r"(?:(\d+)hr[s]?)? ?(?:(\d+)min[s]?)? ?(?:(\d+)sec[s]?)? ago", time_str)
+        if time_match:
+            hours = int(time_match.group(1)) if time_match.group(1) else 0
+            minutes = int(time_match.group(2)) if time_match.group(2) else 0
+            seconds = int(time_match.group(3)) if time_match.group(3) else 0
+            return now - timedelta(hours=hours, minutes=minutes, seconds=seconds)
+
+    # Якщо формат - YYYY/MM/DD HH:MM:SS
+    try:
+        return datetime.strptime(time_str, "%Y/%m/%d %H:%M:%S")
+    except ValueError:
+        pass
+
+    # Якщо формат не розпізнано
+    raise ValueError(f"Unrecognized time format: {time_str}")
+
+# Функція для перевірки існування транзакції
+def transaction_exists(user_address, time_of_tx, action, amount, token, token_address):
+    try:
+        # Конвертуємо час у datetime
+        converted_time = parse_time(time_of_tx)
+
+        # Шукаємо транзакцію з подібними критеріями
+        existing_transaction = session.query(Transactions).filter_by(
+            user_address=user_address,
+            action=action,
+            amount=amount,
+            token=token,
+            token_address=token_address
+        ).filter(
+            Transactions.time.between(
+                (converted_time - timedelta(seconds=5)).strftime("%Y/%m/%d %H:%M:%S"),
+                (converted_time + timedelta(seconds=5)).strftime("%Y/%m/%d %H:%M:%S")
+            )
+        ).first()
+
+        return existing_transaction is not None
+    except Exception as e:
+        print(f"Error while checking transaction existence: {e}")
+        return False
+
+
 # Функція для зчитування адрес із бази даних
 def get_addresses():
     try:
@@ -140,12 +233,13 @@ def get_addresses():
         return []
 
 if __name__ == "__main__":
-    addresses = get_addresses()
+    while True:
+        addresses = get_addresses()
 
-    for address in addresses:
-        current_time = datetime.now().strftime("%m-%d %H:%M")
-        print(f"/ {current_time} / USER: {address}")
-        get_data_from_user(address)
-        time.sleep(1)  # Невелика затримка між запитами
+        for address in addresses:
+            current_time = datetime.now().strftime("%m-%d %H:%M")
+            print(f"/ {current_time} / USER: {address}")
+            get_data_from_user(address)
+            time.sleep(1)  # Невелика затримка між запитами
 
     driver.quit()
