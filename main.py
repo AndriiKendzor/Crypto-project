@@ -1,21 +1,27 @@
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler
+import requests
 
+def send_message(text: str) -> None:
+    token = "7943976877:AAFTnXwKbrxgJdi3mhv5xe2N5zK52CKgZ7o"
+    chat_id = "1306841120"
+    # Формування URL для запиту
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    # Дані для запиту
+    payload = {
+        "chat_id": chat_id,
+        "text": text
+    }
 
-TOKEN = "7943976877:AAFTnXwKbrxgJdi3mhv5xe2N5zK52CKgZ7o"
+    # Надсилання запиту
+    response = requests.post(url, json=payload)
 
-# Функція для обробки команди /start
-async def start(update: Update, context):
-    await update.message.reply_text(
-        "Hello! This is Crypto Bot. Welcome to the bot."
-    )
+    # Перевірка відповіді
+    if response.status_code == 200:
+        print("Message sent successfully!")
+    else:
+        print("Failed to send message:", response.json())
 
-# Основна функція запуску бота
+# Використання функції
 if __name__ == "__main__":
-    # Створення застосунку бота
-    app = ApplicationBuilder().token(TOKEN).build()
-    # Додавання обробників
-    app.add_handler(CommandHandler("start", start))
-    # Запуск бота
-    print("Бот працює...")
-    app.run_polling()
+    text = "Hello from my computer!"
+
+    send_message(text)
