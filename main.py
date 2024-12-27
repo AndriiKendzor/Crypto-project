@@ -82,6 +82,7 @@ def get_data_from_user(address):
             time_of_tx_correct = parse_time(time_of_tx)
         except Exception:
             time_of_tx = "NOT FOUND"
+            time_of_tx_correct = "NOT FOUND"
 
         try:
             amount = first_transaction.find_element(By.XPATH, ".//span[contains(@class, 'ChangeTokenList_tokenPrice')]").text
@@ -226,8 +227,8 @@ def transaction_exists(user_address, time, action, amount, token, token_address)
             token_address=token_address
         ).filter(
             Transactions.time.between(
-                (time - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M"),
-                (time + timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M")
+                time - timedelta(minutes=1),
+                time + timedelta(minutes=1)
             )
         ).first()
         print(existing_transaction)
@@ -235,6 +236,7 @@ def transaction_exists(user_address, time, action, amount, token, token_address)
     except Exception as e:
         print(f"Error while checking transaction existence: {e}")
         return False
+
 
 
 # Функція для зчитування адрес із бази даних

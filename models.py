@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, func
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, func
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Налаштування бази даних
@@ -19,7 +19,7 @@ class Transactions(Base):
     __tablename__ = "transactions"
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_address = Column(String, nullable=False)
-    time = Column(String, nullable=True)
+    time = Column(DateTime, nullable=True)
     action = Column(String, nullable=True)
     amount = Column(String, nullable=True)
     token = Column(String, nullable=True)

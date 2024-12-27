@@ -1,22 +1,31 @@
 import requests
+from models import *
 
 def send_message(text: str) -> None:
     token = "7943976877:AAFTnXwKbrxgJdi3mhv5xe2N5zK52CKgZ7o"
-    chat_id = "1306841120"
-    # Формування URL для запиту
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    # Дані для запиту
-    payload = {
-        "chat_id": chat_id,
-        "text": text
-    }
+    # Формування URL для запиту
 
-    # Надсилання запиту
-    response = requests.post(url, json=payload)
+    active_users = check_if_allowed()
 
-    # Перевірка відповіді
-    if response.status_code == 200:
-        print("Message sent successfully!")
-    else:
-        print("Failed to send message:", response.json())
+    for user in active_users:
+        payload = {
+            "chat_id": user.telegram_id,
+            "text": text
+        }
+        # Надсилання запиту
+        response = requests.post(url, json=payload)
+
+        # Перевірка відповіді
+        if response.status_code == 200:
+            print("Message sent successfully!")
+        else:
+            print("Failed to send message:", response.json())
+
+
+def check_if_allowed():
+
+    active_users = session.query(AllowedParticipants).filter_by(active=True).all()
+    return active_users
+
 
