@@ -79,6 +79,7 @@ def get_data_from_user(address):
         # Перевіряємо кожен елемент окремо
         try:
             time_of_tx = first_transaction.find_element(By.XPATH, ".//div[contains(@class, 'History_sinceTime')]").text
+            time_of_tx_correct = parse_time(time_of_tx)
         except Exception:
             time_of_tx = "NOT FOUND"
 
@@ -113,7 +114,7 @@ def get_data_from_user(address):
             if parsed_amount > 1000:
                 message = f"\ud83d\udea8 High Transaction Alert \ud83d\udea8\n" \
                           f"USER: {address}\n" \
-                          f"Time: {time_of_tx} \n" \
+                          f"Time: {time_of_tx_correct} \n" \
                           f"Action: {action_text} \n" \
                           f"Amount: {parsed_amount:.2f} $\n" \
                           f"Token: {token}\n" \
@@ -126,14 +127,13 @@ def get_data_from_user(address):
 
         problem = any(field == "NOT FOUND" for field in [time_of_tx, amount, token, action_text, token_address])
 
-
-        if not transaction_exists(address, time_of_tx, action_text, amount, token, token_address):
+        if not transaction_exists(address, time_of_tx_correct, action_text, amount, token, token_address):
             if message_send==True:
                 send_message(message)
 
             save_transaction(
                 user_address=address,
-                time=time_of_tx,
+                time=time_of_tx_correct,
                 action=action_text,
                 amount=amount,
                 token=token,
@@ -142,8 +142,20 @@ def get_data_from_user(address):
                 problem=problem
             )
 
+            if problem == True:
+                error_message = f"\u274C Problem Transaction Alert \u274C\n" \
+                          f"USER: {address}\n" \
+                          f"Time: {time_of_tx_correct} \n" \
+                          f"Action: {action_text} \n" \
+                          f"Amount: {parsed_amount:.2f} $\n" \
+                          f"Token: {token}\n" \
+                          f"Token address: {token_address} \n"
+                send_message(error_message)
+
+
         print(
               f"Time: {time_of_tx} \n"
+              f"Time convert: {time_of_tx_correct} \n"
               f"Action: {action_text} \n"
               f"Amount: {parsed_amount:.2f} $\n"
               f"Token: {token}\n"
@@ -185,24 +197,26 @@ def parse_time(time_str):
         if time_match:
             hours = int(time_match.group(1)) if time_match.group(1) else 0
             minutes = int(time_match.group(2)) if time_match.group(2) else 0
-            seconds = int(time_match.group(3)) if time_match.group(3) else 0
-            return now - timedelta(hours=hours, minutes=minutes, seconds=seconds)
+
+            # Ігноруємо секунди і скорочуємо до хвилини
+            adjusted_time = now - timedelta(hours=hours, minutes=minutes)
+            return adjusted_time.replace(second=0, microsecond=0)
 
     # Якщо формат - YYYY/MM/DD HH:MM:SS
     try:
-        return datetime.strptime(time_str, "%Y/%m/%d %H:%M:%S")
+        parsed_time = datetime.strptime(time_str, "%Y/%m/%d %H:%M:%S")
+        # Скорочуємо до хвилини
+        return parsed_time.replace(second=0, microsecond=0)
     except ValueError:
         pass
 
     # Якщо формат не розпізнано
     raise ValueError(f"Unrecognized time format: {time_str}")
 
-# Функція для перевірки існування транзакції
-def transaction_exists(user_address, time_of_tx, action, amount, token, token_address):
-    try:
-        # Конвертуємо час у datetime
-        converted_time = parse_time(time_of_tx)
 
+# Функція для перевірки існування транзакції
+def transaction_exists(user_address, time, action, amount, token, token_address):
+    try:
         # Шукаємо транзакцію з подібними критеріями
         existing_transaction = session.query(Transactions).filter_by(
             user_address=user_address,
@@ -212,11 +226,11 @@ def transaction_exists(user_address, time_of_tx, action, amount, token, token_ad
             token_address=token_address
         ).filter(
             Transactions.time.between(
-                (converted_time - timedelta(seconds=5)).strftime("%Y/%m/%d %H:%M:%S"),
-                (converted_time + timedelta(seconds=5)).strftime("%Y/%m/%d %H:%M:%S")
+                (time - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M"),
+                (time + timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M")
             )
         ).first()
-
+        print(existing_transaction)
         return existing_transaction is not None
     except Exception as e:
         print(f"Error while checking transaction existence: {e}")
