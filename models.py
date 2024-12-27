@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, func
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Налаштування бази даних
