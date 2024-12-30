@@ -14,41 +14,43 @@ import re
 
 
 # Аутентифікація для Scraping Browser
-AUTH = 'brd-customer-hl_f402bbf9-zone-crypto_project:sqdckur1s8nj'
-SBR_WEBDRIVER = f'https://{AUTH}@brd.superproxy.io:9515'
+SBR_WEBDRIVER = f'https://brd-customer-hl_f402bbf9-zone-crypto_project:sqdckur1s8nj@brd.superproxy.io:9515'
 sbr_connection = ChromiumRemoteConnection(SBR_WEBDRIVER, 'goog', 'chrome')
+options = ChromeOptions()
+options.add_argument('--disable-blink-features=AutomationControlled')
+options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 
-def generate_random_cookie():
-    """Генерує випадкові cookie для маскування активності"""
-    return {
-        "name": ''.join(random.choices(string.ascii_uppercase + string.digits, k=8)),
-        "value": ''.join(random.choices(string.ascii_letters + string.digits, k=16)),
-        "domain": ".debank.com",
-        "path": "/"
-    }
+
+def generate_random_cookie_js():
+    """Генерує рядок JavaScript для встановлення рандомного cookie"""
+    name = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    value = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
+    domain = ".debank.com"  # Замініть на відповідний домен
+    path = "/"
+
+    # Формуємо JavaScript
+    js_script = f"""
+        document.cookie = "name={name}; value={value}; path={path}; domain={domain}";
+    """
+    return js_script
 
 
 def set_cookies(driver, url):
-    """Встановлює нові cookie перед кожним запитом"""
+    """Встановлює рандомні cookie через JavaScript перед кожним запитом"""
     driver.get(url)
 
-    # Очікування повного завантаження сторінки
-    WebDriverWait(driver, 10).until(
+    # Очікування завантаження сторінки
+    WebDriverWait(driver, 5).until(
         EC.presence_of_element_located((By.TAG_NAME, "body"))
     )
 
-    # Генерація та встановлення cookie
-    cookie = {
-        "name": ''.join(random.choices(string.ascii_uppercase + string.digits, k=8)),
-        "value": ''.join(random.choices(string.ascii_letters + string.digits, k=16)),
-        "domain": "debank.com",
-        "path": "/"
-    }
+    # Встановлення cookie через JavaScript
     try:
-        driver.add_cookie(cookie)
-        print(f"Cookie встановлено: {cookie}")
-    except Exception as e:
-        print(f"Не вдалося встановити cookie: {e}")
+        js_script = generate_random_cookie_js()
+        driver.execute_script(js_script)
+        print(f"Рандомний cookie встановлено")
+    except Exception as js_error:
+        print(f"Не вдалося встановити cookie")
 
 
 
@@ -65,7 +67,7 @@ def parse_price(price_str):
 
 def press_load_more_button(driver):
     load_more_button = WebDriverWait(driver, 5).until(
-        EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'History_loadMore__IilgR')]"))
+        EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'History_loadMore')]"))
     )
     load_more_button.click()
     print("Clicked 'Load More' button.")
@@ -88,6 +90,12 @@ def get_data_from_user(address):
         url = f"https://debank.com/profile/{address}/history"
         driver.get(url)
         set_cookies(driver, url)
+        try:
+            driver = Remote(command_executor=SBR_WEBDRIVER, options=ChromeOptions())
+            print("Підключення до Scraping Browser успішне!")
+        except Exception as e:
+            print(f"Не вдалося підключитися до Scraping Browser: {e}")
+            return
 
         try:
             #finding first transaction
@@ -111,38 +119,34 @@ def get_data_from_user(address):
             try:
                 time_of_tx = first_transaction.find_element(By.XPATH, ".//div[contains(@class, 'History_sinceTime')]").text
                 time_of_tx_correct = parse_time(time_of_tx)
+
             except Exception:
                 time_of_tx = "NOT FOUND"
                 time_of_tx_correct = "NOT FOUND"
-
             try:
                 amount = first_transaction.find_element(By.XPATH, ".//span[contains(@class, 'ChangeTokenList_tokenPrice')]").text
             except Exception:
                 amount = "NOT FOUND"
-
             try:
                 token = first_transaction.find_element(By.XPATH, ".//span[contains(@class, 'ChangeTokenList_tokenName')]").text
             except Exception:
                 token = "NOT FOUND"
-
             try:
                 action = first_transaction.find_element(By.XPATH, ".//div[contains(@class, 'TransactionAction_action')]")
                 action_text = action.text
             except Exception:
                 action_text = "NOT FOUND"
-
             try:
                 token_address = find_token_address(action, driver)
             except Exception:
                 token_address = "NOT FOUND"
-
             #check amount
             if amount == "NOT FOUND":
                 parsed_amount = "NOT FOUND"
                 message_send = False
             else:
                 parsed_amount = parse_price(amount)
-
+                message_send = False
                 if parsed_amount > 1000:
                     message = f"\ud83d\udea8 High Transaction Alert \ud83d\udea8\n" \
                               f"USER: {address}\n" \
@@ -159,31 +163,36 @@ def get_data_from_user(address):
 
             problem = any(field == "NOT FOUND" for field in [time_of_tx, amount, token, action_text, token_address])
 
-            if not transaction_exists(address, time_of_tx_correct, action_text, amount, token, token_address):
-                if message_send==True:
-                    send_message(message)
+            if time_of_tx_correct != "NOT FOUND":
+                if not transaction_exists(address, time_of_tx_correct, action_text, amount, token, token_address):
+                    if message_send==True:
+                        send_message(message)
 
-                save_transaction(
-                    user_address=address,
-                    time=time_of_tx_correct,
-                    action=action_text,
-                    amount=amount,
-                    token=token,
-                    token_address=token_address,
-                    message_send=message_send,
-                    problem=problem
-                )
+                    save_transaction(
+                        user_address=address,
+                        time=time_of_tx_correct,
+                        action=action_text,
+                        amount=amount,
+                        token=token,
+                        token_address=token_address,
+                        message_send=message_send,
+                        problem=problem
+                    )
 
-                if problem == True:
-                    error_message = f"\u274C Problem Transaction Alert \u274C\n" \
-                              f"USER: {address}\n" \
-                              f"Time: {time_of_tx_correct} \n" \
-                              f"Action: {action_text} \n" \
-                              f"Amount: {parsed_amount:.2f} $\n" \
-                              f"Token: {token}\n" \
-                              f"Token address: {token_address} \n"
-                    send_message(error_message)
-
+                    if problem == True:
+                        error_message = f"\u274C Problem Transaction Alert \u274C\n" \
+                                  f"USER: {address}\n" \
+                                  f"Time: {time_of_tx_correct} \n" \
+                                  f"Action: {action_text} \n" \
+                                  f"Amount: {parsed_amount:.2f} $\n" \
+                                  f"Token: {token}\n" \
+                                  f"Token address: {token_address} \n"
+                        send_message(error_message)
+            else:
+                error_message = f"\u274C Problem Transaction Alert \u274C\n" \
+                                f"USER: {address}\n" \
+                                f"Can not get transaction"
+                send_message(error_message)
 
             print(
                   f"Time: {time_of_tx} \n"
@@ -196,6 +205,9 @@ def get_data_from_user(address):
                   )
         except Exception as e:
             print(f"Error while parsing: {e}")
+
+    driver.quit()
+
 
 # Функція для збереження транзакції в базу даних
 def save_transaction(user_address, time, action, amount, token, token_address, message_send, problem):
@@ -279,13 +291,14 @@ def get_addresses():
         return []
 
 if __name__ == "__main__":
-    while True:
-        addresses = get_addresses()
 
-        for address in addresses:
-            current_time = datetime.now().strftime("%m-%d %H:%M")
-            print(f"/ {current_time} / USER: {address}")
-            get_data_from_user(address)
-            time.sleep(1)  # Невелика затримка між запитами
+    addresses = get_addresses()
 
-    driver.quit()
+    for address in addresses:
+        current_time = datetime.now().strftime("%m-%d %H:%M")
+        print(f"/ {current_time} / USER: {address}")
+        get_data_from_user(address)
+        time.sleep(1)  # Невелика затримка між запитами
+
+
+
