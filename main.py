@@ -86,17 +86,10 @@ def find_token_address(action, driver):
 
 # Основна функція парсера транзакцій
 def get_data_from_user(address):
-    with Remote(sbr_connection, options=ChromeOptions()) as driver:
+    with Remote(SBR_WEBDRIVER, options=ChromeOptions()) as driver:
         url = f"https://debank.com/profile/{address}/history"
         driver.get(url)
         set_cookies(driver, url)
-        try:
-            driver = Remote(command_executor=SBR_WEBDRIVER, options=ChromeOptions())
-            print("Підключення до Scraping Browser успішне!")
-        except Exception as e:
-            print(f"Не вдалося підключитися до Scraping Browser: {e}")
-            return
-
         try:
             #finding first transaction
             first_transaction = None
@@ -198,7 +191,7 @@ def get_data_from_user(address):
                   f"Time: {time_of_tx} \n"
                   f"Time convert: {time_of_tx_correct} \n"
                   f"Action: {action_text} \n"
-                  f"Amount: {parsed_amount:.2f} $\n"
+                  f"Amount: {parsed_amount} $\n"
                   f"Token: {token}\n"
                   f"Token address: {token_address}\n"
                   "-------------"
@@ -291,14 +284,12 @@ def get_addresses():
         return []
 
 if __name__ == "__main__":
+    while True:
+        addresses = get_addresses()
 
-    addresses = get_addresses()
-
-    for address in addresses:
-        current_time = datetime.now().strftime("%m-%d %H:%M")
-        print(f"/ {current_time} / USER: {address}")
-        get_data_from_user(address)
-        time.sleep(1)  # Невелика затримка між запитами
-
-
+        for address in addresses:
+            current_time = datetime.now().strftime("%m-%d %H:%M")
+            print(f"/ {current_time} / USER: {address}")
+            get_data_from_user(address)
+            time.sleep(1)  # Невелика затримка між запитами
 
