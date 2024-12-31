@@ -17,9 +17,10 @@ import re
 SBR_WEBDRIVER = f'https://brd-customer-hl_f402bbf9-zone-crypto_project:sqdckur1s8nj@brd.superproxy.io:9515'
 sbr_connection = ChromiumRemoteConnection(SBR_WEBDRIVER, 'goog', 'chrome')
 options = ChromeOptions()
-options.add_argument('--disable-blink-features=AutomationControlled')
 options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-
+options.add_argument('--disable-blink-features=AutomationControlled')
+options.add_argument('--disable-dev-shm-usage')
+options.add_argument('--no-sandbox')
 
 def generate_random_cookie_js():
     """Генерує рядок JavaScript для встановлення рандомного cookie"""
@@ -199,7 +200,7 @@ def get_data_from_user(address):
         except Exception as e:
             print(f"Error while parsing: {e}")
 
-    driver.quit()
+
 
 
 # Функція для збереження транзакції в базу даних
@@ -290,6 +291,13 @@ if __name__ == "__main__":
         for address in addresses:
             current_time = datetime.now().strftime("%m-%d %H:%M")
             print(f"/ {current_time} / USER: {address}")
-            get_data_from_user(address)
-            time.sleep(1)  # Невелика затримка між запитами
+            try:
+                get_data_from_user(address)
+            except Exception as e:
+                error_message = f"\u274C Problem Transaction Alert \u274C\n" \
+                                f"An error with proxy."
+                send_message(error_message)
+                print(f"An error with proxy: {e}.")
+
+            time.sleep(random.uniform(2, 5))  # Невелика затримка між запитами
 
