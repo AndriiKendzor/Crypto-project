@@ -1,26 +1,61 @@
 from send_massage import send_message
 from models import *
+from selenium import webdriver
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver import Remote, ChromeOptions
-from selenium.webdriver.chromium.remote_connection import ChromiumRemoteConnection
+from selenium.webdriver.chrome.options import Options
+
 import time
 import random
 import string
 from datetime import datetime, timedelta
 import re
 
+from fake_useragent import UserAgent
+from stem import Signal
+from stem.control import Controller
+import requests
 
-# Аутентифікація для Scraping Browser
-SBR_WEBDRIVER = f'https://brd-customer-hl_f402bbf9-zone-crypto_project:sqdckur1s8nj@brd.superproxy.io:9515'
-sbr_connection = ChromiumRemoteConnection(SBR_WEBDRIVER, 'goog', 'chrome')
-options = ChromeOptions()
-options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-options.add_argument('--disable-blink-features=AutomationControlled')
-options.add_argument('--disable-dev-shm-usage')
-options.add_argument('--no-sandbox')
+
+# Проксі для Tor
+TOR_SOCKS_PROXY = '127.0.0.1:9150'
+TOR_CONTROL_PORT = 9151
+TOR_PASSWORD = ''
+
+
+def set_up_driver():
+    """Налаштування Selenium WebDriver для роботи через локальний Tor"""
+    options = Options()
+
+    # Налаштування проксі для SOCKS5
+    options.add_argument(f'--proxy-server=socks5://{TOR_SOCKS_PROXY}')
+
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--headless')
+
+    # Випадковий User-Agent
+    ua = UserAgent()
+    options.add_argument(f"user-agent={ua.random}")
+
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=options)
+
+    return driver
+
+def renew_connection():
+   #Функція для оновлення IP-адреси через Tor
+    with Controller.from_port(port=TOR_CONTROL_PORT) as controller:
+        controller.authenticate()
+        controller.signal(Signal.NEWNYM)
+        print("New Tor connection initiated.")
+        time.sleep(3)
+
 
 def generate_random_cookie_js():
     """Генерує рядок JavaScript для встановлення рандомного cookie"""
@@ -87,118 +122,125 @@ def find_token_address(action, driver):
 
 # Основна функція парсера транзакцій
 def get_data_from_user(address):
-    with Remote(SBR_WEBDRIVER, options=ChromeOptions()) as driver:
-        url = f"https://debank.com/profile/{address}/history"
-        driver.get(url)
-        set_cookies(driver, url)
-        try:
-            #finding first transaction
-            first_transaction = None
-            while not first_transaction:
+
+    renew_connection()  # Оновлюємо IP перед кожним запитом
+    driver = set_up_driver()
+
+    url = f"https://debank.com/profile/{address}/history"
+    driver.get(url)
+
+    set_cookies(driver, url)
+    time.sleep(5)
+    try:
+        #finding first transaction
+        first_transaction = None
+        while not first_transaction:
+            try:
+                # Спроба знайти першу транзакцію, яка не містить клас 'History_error'
+                first_transaction = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'History_tableLine') and not(contains(@class, 'History_error'))]"))
+                )
+            except:
+                # Якщо транзакція не знайдена, натискаємо кнопку 'Load More'
                 try:
-                    # Спроба знайти першу транзакцію, яка не містить клас 'History_error'
-                    first_transaction = WebDriverWait(driver, 5).until(
-                        EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'History_tableLine') and not(contains(@class, 'History_error'))]"))
-                    )
-                except:
-                    # Якщо транзакція не знайдена, натискаємо кнопку 'Load More'
-                    try:
-                        press_load_more_button(driver)
-                        print("Clicked 'Load More' button.")
-                    except Exception as e:
-                        print("No more transactions to load or error occurred:", e)
-                        break
+                    press_load_more_button(driver)
+                    print("Clicked 'Load More' button.")
+                except Exception as e:
+                    print("No more transactions to load or error occurred:", e)
+                    break
 
-            # Перевіряємо кожен елемент окремо
-            try:
-                time_of_tx = first_transaction.find_element(By.XPATH, ".//div[contains(@class, 'History_sinceTime')]").text
-                time_of_tx_correct = parse_time(time_of_tx)
+        # Перевіряємо кожен елемент окремо
+        try:
+            time_of_tx = first_transaction.find_element(By.XPATH, ".//div[contains(@class, 'History_sinceTime')]").text
+            time_of_tx_correct = parse_time(time_of_tx)
 
-            except Exception:
-                time_of_tx = "NOT FOUND"
-                time_of_tx_correct = "NOT FOUND"
-            try:
-                amount = first_transaction.find_element(By.XPATH, ".//span[contains(@class, 'ChangeTokenList_tokenPrice')]").text
-            except Exception:
-                amount = "NOT FOUND"
-            try:
-                token = first_transaction.find_element(By.XPATH, ".//span[contains(@class, 'ChangeTokenList_tokenName')]").text
-            except Exception:
-                token = "NOT FOUND"
-            try:
-                action = first_transaction.find_element(By.XPATH, ".//div[contains(@class, 'TransactionAction_action')]")
-                action_text = action.text
-            except Exception:
-                action_text = "NOT FOUND"
-            try:
-                token_address = find_token_address(action, driver)
-            except Exception:
-                token_address = "NOT FOUND"
-            #check amount
-            if amount == "NOT FOUND":
-                parsed_amount = "NOT FOUND"
-                message_send = False
+        except Exception:
+            time_of_tx = "NOT FOUND"
+            time_of_tx_correct = "NOT FOUND"
+        try:
+            amount = first_transaction.find_element(By.XPATH, ".//span[contains(@class, 'ChangeTokenList_tokenPrice')]").text
+        except Exception:
+            amount = "NOT FOUND"
+        try:
+            token = first_transaction.find_element(By.XPATH, ".//span[contains(@class, 'ChangeTokenList_tokenName')]").text
+        except Exception:
+            token = "NOT FOUND"
+        try:
+            action = first_transaction.find_element(By.XPATH, ".//div[contains(@class, 'TransactionAction_action')]")
+            action_text = action.text
+        except Exception:
+            action_text = "NOT FOUND"
+        try:
+            token_address = find_token_address(action, driver)
+        except Exception:
+            token_address = "NOT FOUND"
+        #check amount
+        if amount == "NOT FOUND":
+            parsed_amount = "NOT FOUND"
+            message_send = False
+        else:
+            parsed_amount = parse_price(amount)
+            message_send = False
+            if parsed_amount > 1000:
+                message = f"\ud83d\udea8 High Transaction Alert \ud83d\udea8\n" \
+                          f"USER: {address}\n" \
+                          f"Time: {time_of_tx_correct} \n" \
+                          f"Action: {action_text} \n" \
+                          f"Amount: {parsed_amount:.2f} $\n" \
+                          f"Token: {token}\n" \
+                          f"Token address: {token_address} \n"
+                message_send = True
             else:
-                parsed_amount = parse_price(amount)
                 message_send = False
-                if parsed_amount > 1000:
-                    message = f"\ud83d\udea8 High Transaction Alert \ud83d\udea8\n" \
+
+
+
+        problem = any(field == "NOT FOUND" for field in [time_of_tx, amount, token, action_text, token_address])
+
+        if time_of_tx_correct != "NOT FOUND":
+            if not transaction_exists(address, time_of_tx_correct, action_text, amount, token, token_address):
+                if message_send==True:
+                    send_message(message)
+
+                save_transaction(
+                    user_address=address,
+                    time=time_of_tx_correct,
+                    action=action_text,
+                    amount=amount,
+                    token=token,
+                    token_address=token_address,
+                    message_send=message_send,
+                    problem=problem
+                )
+
+                if problem == True:
+                    error_message = f"\u274C Problem Transaction Alert \u274C\n" \
                               f"USER: {address}\n" \
                               f"Time: {time_of_tx_correct} \n" \
                               f"Action: {action_text} \n" \
                               f"Amount: {parsed_amount:.2f} $\n" \
                               f"Token: {token}\n" \
                               f"Token address: {token_address} \n"
-                    message_send = True
-                else:
-                    message_send = False
+                    send_message(error_message)
+        else:
+            error_message = f"\u274C Problem Transaction Alert \u274C\n" \
+                            f"USER: {address}\n" \
+                            f"Can not get transaction"
+            send_message(error_message)
 
-
-
-            problem = any(field == "NOT FOUND" for field in [time_of_tx, amount, token, action_text, token_address])
-
-            if time_of_tx_correct != "NOT FOUND":
-                if not transaction_exists(address, time_of_tx_correct, action_text, amount, token, token_address):
-                    if message_send==True:
-                        send_message(message)
-
-                    save_transaction(
-                        user_address=address,
-                        time=time_of_tx_correct,
-                        action=action_text,
-                        amount=amount,
-                        token=token,
-                        token_address=token_address,
-                        message_send=message_send,
-                        problem=problem
-                    )
-
-                    if problem == True:
-                        error_message = f"\u274C Problem Transaction Alert \u274C\n" \
-                                  f"USER: {address}\n" \
-                                  f"Time: {time_of_tx_correct} \n" \
-                                  f"Action: {action_text} \n" \
-                                  f"Amount: {parsed_amount:.2f} $\n" \
-                                  f"Token: {token}\n" \
-                                  f"Token address: {token_address} \n"
-                        send_message(error_message)
-            else:
-                error_message = f"\u274C Problem Transaction Alert \u274C\n" \
-                                f"USER: {address}\n" \
-                                f"Can not get transaction"
-                send_message(error_message)
-
-            print(
-                  f"Time: {time_of_tx} \n"
-                  f"Time convert: {time_of_tx_correct} \n"
-                  f"Action: {action_text} \n"
-                  f"Amount: {parsed_amount} $\n"
-                  f"Token: {token}\n"
-                  f"Token address: {token_address}\n"
-                  "-------------"
-                  )
-        except Exception as e:
-            print(f"Error while parsing: {e}")
+        print(
+              f"Time: {time_of_tx} \n"
+              f"Time convert: {time_of_tx_correct} \n"
+              f"Action: {action_text} \n"
+              f"Amount: {parsed_amount} $\n"
+              f"Token: {token}\n"
+              f"Token address: {token_address}\n"
+              "-------------"
+              )
+    except Exception as e:
+        print(f"Error while parsing: {e}")
+    finally:
+        driver.quit()
 
 
 
@@ -300,4 +342,3 @@ if __name__ == "__main__":
                 print(f"An error with proxy: {e}.")
 
             time.sleep(random.uniform(2, 5))  # Невелика затримка між запитами
-
