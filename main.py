@@ -186,7 +186,7 @@ def get_data_from_user(address):
                           f"USER: {address}\n" \
                           f"Time: {time_of_tx_correct} \n" \
                           f"Action: {action_text} \n" \
-                          f"Amount: {parsed_amount:.2f} $\n" \
+                          f"Amount: {parsed_amount} $\n" \
                           f"Token: {token}\n" \
                           f"Token address: {token_address} \n"
                 message_send = True
@@ -218,7 +218,7 @@ def get_data_from_user(address):
                               f"USER: {address}\n" \
                               f"Time: {time_of_tx_correct} \n" \
                               f"Action: {action_text} \n" \
-                              f"Amount: {parsed_amount:.2f} $\n" \
+                              f"Amount: {parsed_amount} $\n" \
                               f"Token: {token}\n" \
                               f"Token address: {token_address} \n"
                     send_message(error_message)
