@@ -366,9 +366,5 @@ if __name__ == "__main__":
         try:
             asyncio.run(main())
         except Exception as e:
-
-            error_message = f"\u274C Problem Transaction Alert \u274C\n" \
-                            f"Critical error."
-            await send_message(error_message)
             print(f"Critical error: {e}. Restarting...")
             time.sleep(5)
