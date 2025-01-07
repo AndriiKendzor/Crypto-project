@@ -18,8 +18,8 @@ import re
 from fake_useragent import UserAgent
 from stem import Signal
 from stem.control import Controller
-import requests
 
+import asyncio
 
 # Проксі для Tor
 TOR_SOCKS_PROXY = '127.0.0.1:9150'
@@ -48,16 +48,16 @@ def set_up_driver():
 
     return driver
 
-def renew_connection():
+async def renew_connection():
    #Функція для оновлення IP-адреси через Tor
     with Controller.from_port(port=TOR_CONTROL_PORT) as controller:
         controller.authenticate()
         controller.signal(Signal.NEWNYM)
         print("New Tor connection initiated.")
-        time.sleep(3)
+        await asyncio.sleep(3)
 
 
-def generate_random_cookie_js():
+async def generate_random_cookie_js():
     """Генерує рядок JavaScript для встановлення рандомного cookie"""
     name = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
     value = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
@@ -71,7 +71,7 @@ def generate_random_cookie_js():
     return js_script
 
 
-def set_cookies(driver, url):
+async def set_cookies(driver, url):
     """Встановлює рандомні cookie через JavaScript перед кожним запитом"""
     driver.get(url)
 
@@ -82,7 +82,7 @@ def set_cookies(driver, url):
 
     # Встановлення cookie через JavaScript
     try:
-        js_script = generate_random_cookie_js()
+        js_script = await generate_random_cookie_js()
         driver.execute_script(js_script)
         print(f"Рандомний cookie встановлено")
     except Exception as js_error:
@@ -91,7 +91,7 @@ def set_cookies(driver, url):
 
 
 # Функція для обробки ціни
-def parse_price(price_str):
+async def parse_price(price_str):
     clean_str = price_str.replace("(", "").replace(")", "").replace("$", "").replace(",", "").replace("<", "")
 
     if "M" in clean_str:
@@ -101,14 +101,13 @@ def parse_price(price_str):
     else:
         return float(clean_str)
 
-def press_load_more_button(driver):
+async def press_load_more_button(driver):
     load_more_button = WebDriverWait(driver, 5).until(
         EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'History_loadMore')]"))
     )
     load_more_button.click()
-    print("Clicked 'Load More' button.")
 
-def find_token_address(action, driver):
+async def find_token_address(action, driver):
     hover_element = action
 
     actions = ActionChains(driver)
@@ -121,16 +120,16 @@ def find_token_address(action, driver):
     return token_address
 
 # Основна функція парсера транзакцій
-def get_data_from_user(address):
+async def get_data_from_user(driver, address):
 
-    renew_connection()  # Оновлюємо IP перед кожним запитом
-    driver = set_up_driver()
+    await renew_connection()  # Оновлюємо IP перед кожним запитом
 
     url = f"https://debank.com/profile/{address}/history"
     driver.get(url)
 
-    set_cookies(driver, url)
-    time.sleep(5)
+    await set_cookies(driver, url)
+
+    await asyncio.sleep(3)
     try:
         #finding first transaction
         first_transaction = None
@@ -143,8 +142,7 @@ def get_data_from_user(address):
             except:
                 # Якщо транзакція не знайдена, натискаємо кнопку 'Load More'
                 try:
-                    press_load_more_button(driver)
-                    print("Clicked 'Load More' button.")
+                    await press_load_more_button(driver)
                 except Exception as e:
                     print("No more transactions to load or error occurred:", e)
                     break
@@ -152,7 +150,7 @@ def get_data_from_user(address):
         # Перевіряємо кожен елемент окремо
         try:
             time_of_tx = first_transaction.find_element(By.XPATH, ".//div[contains(@class, 'History_sinceTime')]").text
-            time_of_tx_correct = parse_time(time_of_tx)
+            time_of_tx_correct = await parse_time(time_of_tx)
 
         except Exception:
             time_of_tx = "NOT FOUND"
@@ -171,7 +169,7 @@ def get_data_from_user(address):
         except Exception:
             action_text = "NOT FOUND"
         try:
-            token_address = find_token_address(action, driver)
+            token_address = await find_token_address(action, driver)
         except Exception:
             token_address = "NOT FOUND"
         #check amount
@@ -179,7 +177,7 @@ def get_data_from_user(address):
             parsed_amount = "NOT FOUND"
             message_send = False
         else:
-            parsed_amount = parse_price(amount)
+            parsed_amount = await parse_price(amount)
             message_send = False
             if parsed_amount > 1000:
                 message = f"\ud83d\udea8 High Transaction Alert \ud83d\udea8\n" \
@@ -198,11 +196,11 @@ def get_data_from_user(address):
         problem = any(field == "NOT FOUND" for field in [time_of_tx, amount, token, action_text, token_address])
 
         if time_of_tx_correct != "NOT FOUND":
-            if not transaction_exists(address, time_of_tx_correct, action_text, amount, token, token_address):
+            if not await transaction_exists(address, time_of_tx_correct, action_text, amount, token, token_address):
                 if message_send==True:
-                    send_message(message)
+                    await send_message(message)
 
-                save_transaction(
+                await save_transaction(
                     user_address=address,
                     time=time_of_tx_correct,
                     action=action_text,
@@ -221,12 +219,12 @@ def get_data_from_user(address):
                               f"Amount: {parsed_amount} $\n" \
                               f"Token: {token}\n" \
                               f"Token address: {token_address} \n"
-                    send_message(error_message)
+                    await send_message(error_message)
         else:
             error_message = f"\u274C Problem Transaction Alert \u274C\n" \
                             f"USER: {address}\n" \
                             f"Can not get transaction"
-            send_message(error_message)
+            await send_message(error_message)
 
         print(
               f"Time: {time_of_tx} \n"
@@ -239,14 +237,12 @@ def get_data_from_user(address):
               )
     except Exception as e:
         print(f"Error while parsing: {e}")
-    finally:
-        driver.quit()
 
 
 
 
 # Функція для збереження транзакції в базу даних
-def save_transaction(user_address, time, action, amount, token, token_address, message_send, problem):
+async def save_transaction(user_address, time, action, amount, token, token_address, message_send, problem):
     try:
         new_transaction = Transactions(
             user_address=user_address,
@@ -261,13 +257,15 @@ def save_transaction(user_address, time, action, amount, token, token_address, m
         session.add(new_transaction)
         session.commit()
         print("Transaction saved to database.")
+        session.close()
     except Exception as e:
         print(f"Error while saving transaction: {e}")
+        session.close()
 
 
 
 # Функція для парсингу часу
-def parse_time(time_str):
+async def parse_time(time_str):
     now = datetime.now()
 
     # Якщо формат - XXmins XXsecs ago або Xhr Xmin ago
@@ -294,13 +292,12 @@ def parse_time(time_str):
 
 
 # Функція для перевірки існування транзакції
-def transaction_exists(user_address, time, action, amount, token, token_address):
+async def transaction_exists(user_address, time, action, amount, token, token_address):
     try:
         # Шукаємо транзакцію з подібними критеріями
         existing_transaction = session.query(Transactions).filter_by(
             user_address=user_address,
             action=action,
-            amount=amount,
             token=token,
             token_address=token_address
         ).filter(
@@ -326,19 +323,52 @@ def get_addresses():
         print(f"An error occurred while accessing the database: {e}")
         return []
 
+
+
+async def fetch_task(address):
+    """Асинхронне завдання для безперервного парсингу однієї адреси."""
+    while True:
+        driver = set_up_driver()
+        try:
+            await get_data_from_user(driver, address)
+        except Exception as e:
+            error_message = f"\u274C Problem Transaction Alert \u274C\n" \
+                            f"An error with proxy."
+            await send_message(error_message)
+            print(f"An error with proxy: {e}.")
+        finally:
+            driver.quit()
+
+        # Невелика затримка перед повторним запуском
+        await asyncio.sleep(random.uniform(2, 5))
+
+async def send_alive_message(interval=3600):
+    while True:
+        try:
+            await send_message("✅ I am alive")
+            print("Sent 'I am alive' message to Telegram.")
+        except Exception as e:
+            print(f"Error while sending 'I am alive' message: {e}")
+        await asyncio.sleep(interval)  # Очікуємо заданий інтервал перед наступним повідомленням
+
+
+async def main():
+    """Основна функція для запуску асинхронного парсингу."""
+    addresses = get_addresses()
+    tasks = [fetch_task(address) for address in addresses]
+
+    tasks.append(send_alive_message())
+    # Запускаємо всі завдання та чекаємо їх завершення
+    await asyncio.gather(*tasks)
+
 if __name__ == "__main__":
     while True:
-        addresses = get_addresses()
+        try:
+            asyncio.run(main())
+        except Exception as e:
 
-        for address in addresses:
-            current_time = datetime.now().strftime("%m-%d %H:%M")
-            print(f"/ {current_time} / USER: {address}")
-            try:
-                get_data_from_user(address)
-            except Exception as e:
-                error_message = f"\u274C Problem Transaction Alert \u274C\n" \
-                                f"An error with proxy."
-                send_message(error_message)
-                print(f"An error with proxy: {e}.")
-
-            time.sleep(random.uniform(2, 5))  # Невелика затримка між запитами
+            error_message = f"\u274C Problem Transaction Alert \u274C\n" \
+                            f"Critical error."
+            await send_message(error_message)
+            print(f"Critical error: {e}. Restarting...")
+            time.sleep(5)
