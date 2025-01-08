@@ -136,7 +136,7 @@ async def get_data_from_user(driver, address):
         while not first_transaction:
             try:
                 # Спроба знайти першу транзакцію, яка не містить клас 'History_error'
-                first_transaction = WebDriverWait(driver, 5).until(
+                first_transaction = WebDriverWait(driver, 7).until(
                     EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'History_tableLine') and not(contains(@class, 'History_error'))]"))
                 )
             except:
@@ -224,7 +224,8 @@ async def get_data_from_user(driver, address):
             error_message = f"\u274C Problem Transaction Alert \u274C\n" \
                             f"USER: {address}\n" \
                             f"Can not get transaction"
-            await send_message(error_message)
+            #await send_message(error_message)
+            print(error_message)
 
         print(
               f"Time: {time_of_tx} \n"
@@ -237,7 +238,6 @@ async def get_data_from_user(driver, address):
               )
     except Exception as e:
         print(f"Error while parsing: {e}")
-
 
 
 
