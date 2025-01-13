@@ -77,7 +77,7 @@ async def set_cookies(driver, url):
     driver.get(url)
 
     # Очікування завантаження сторінки
-    WebDriverWait(driver, 1).until(
+    WebDriverWait(driver, 5).until(
         EC.presence_of_element_located((By.TAG_NAME, "body"))
     )
 
@@ -105,7 +105,7 @@ async def parse_price(price_str):
         return float(clean_str)
 
 async def press_load_more_button(driver):
-    load_more_button = WebDriverWait(driver, 1).until(
+    load_more_button = WebDriverWait(driver, 5).until(
         EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'History_loadMore')]"))
     )
     load_more_button.click()
@@ -116,7 +116,7 @@ async def find_token_address(action, driver):
     actions = ActionChains(driver)
     actions.move_to_element(hover_element).perform()
 
-    token_address = WebDriverWait(driver, 1).until(
+    token_address = WebDriverWait(driver, 5).until(
         EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'TransactionAction_addr')]"))
     ).text
 
@@ -140,7 +140,7 @@ async def get_data_from_user(driver, address):
         while not first_transaction and load_more_count <= 3:
             try:
                 # Спроба знайти першу транзакцію, яка не містить клас 'History_error'
-                first_transaction = WebDriverWait(driver, 5).until(
+                first_transaction = WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'History_tableLine') and not(contains(@class, 'History_error'))]"))
                 )
             except:
