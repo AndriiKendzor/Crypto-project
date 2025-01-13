@@ -55,7 +55,7 @@ async def renew_connection():
         controller.authenticate()
         controller.signal(Signal.NEWNYM)
         print("New Tor connection initiated.")
-        await asyncio.sleep(3)
+        await asyncio.sleep(1)
 
 
 async def generate_random_cookie_js():
@@ -77,7 +77,7 @@ async def set_cookies(driver, url):
     driver.get(url)
 
     # Очікування завантаження сторінки
-    WebDriverWait(driver, 5).until(
+    WebDriverWait(driver, 1).until(
         EC.presence_of_element_located((By.TAG_NAME, "body"))
     )
 
@@ -87,7 +87,7 @@ async def set_cookies(driver, url):
         driver.execute_script(js_script)
         print(f"Рандомний cookie встановлено")
     except Exception as js_error:
-        curent_time = datetime.now()
+        curent_time = datetime.now() + timedelta(hours=1)
         print(curent_time)
         print(f"Не вдалося встановити cookie")
 
@@ -105,7 +105,7 @@ async def parse_price(price_str):
         return float(clean_str)
 
 async def press_load_more_button(driver):
-    load_more_button = WebDriverWait(driver, 5).until(
+    load_more_button = WebDriverWait(driver, 1).until(
         EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'History_loadMore')]"))
     )
     load_more_button.click()
@@ -116,7 +116,7 @@ async def find_token_address(action, driver):
     actions = ActionChains(driver)
     actions.move_to_element(hover_element).perform()
 
-    token_address = WebDriverWait(driver, 5).until(
+    token_address = WebDriverWait(driver, 1).until(
         EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'TransactionAction_addr')]"))
     ).text
 
@@ -132,22 +132,25 @@ async def get_data_from_user(driver, address):
 
     await set_cookies(driver, url)
 
-    await asyncio.sleep(3)
+    await asyncio.sleep(1)
     try:
         #finding first transaction
         first_transaction = None
-        while not first_transaction:
+        load_more_count = 0
+        while not first_transaction and load_more_count <= 3:
             try:
                 # Спроба знайти першу транзакцію, яка не містить клас 'History_error'
-                first_transaction = WebDriverWait(driver, 7).until(
+                first_transaction = WebDriverWait(driver, 5).until(
                     EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'History_tableLine') and not(contains(@class, 'History_error'))]"))
                 )
             except:
                 # Якщо транзакція не знайдена, натискаємо кнопку 'Load More'
                 try:
+                    load_more_count += 1
                     await press_load_more_button(driver)
+                    print('load more clicked', load_more_count)
                 except Exception as e:
-                    curent_time = datetime.now()
+                    curent_time = datetime.now() + timedelta(hours=1)
                     print(curent_time)
                     print("No more transactions to load or error occurred:", e)
                     break
@@ -243,7 +246,7 @@ async def get_data_from_user(driver, address):
                               f"DeBank: https://debank.com/profile/{address}/history"
                     await send_message(error_message)
         else:
-            curent_time = datetime.now()
+            curent_time = datetime.now() + timedelta(hours=1)
             print(curent_time)
             error_message = f"\u274C Problem Transaction Alert \u274C\n" \
                             f"USER: {address}\n" \
@@ -251,7 +254,7 @@ async def get_data_from_user(driver, address):
             #await send_message(error_message)
             print(error_message)
 
-        curent_time = datetime.now()
+        curent_time = datetime.now() + timedelta(hours=1)
         print(curent_time)
         print(
               f"USER: {address}\n"
@@ -264,7 +267,7 @@ async def get_data_from_user(driver, address):
               "-------------"
               )
     except Exception as e:
-        curent_time = datetime.now()
+        curent_time = datetime.now() + timedelta(hours=1)
         print(curent_time)
         print(f"Error while parsing: {e}")
 
@@ -365,7 +368,7 @@ async def save_transaction(user_address, time, action, amount, token, token_addr
         print("Transaction saved to database.")
         session.close()
     except Exception as e:
-        curent_time = datetime.now()
+        curent_time = datetime.now() + timedelta(hours=1)
         print(curent_time)
         print(f"Error while saving transaction: {e}")
         session.close()
@@ -374,7 +377,7 @@ async def save_transaction(user_address, time, action, amount, token, token_addr
 
 # Функція для парсингу часу
 async def parse_time(time_str):
-    now = datetime.now()
+    now = datetime.now() + timedelta(hours=1)
 
     # Якщо формат - XXmins XXsecs ago або Xhr Xmin ago
     if "ago" in time_str:
@@ -390,6 +393,7 @@ async def parse_time(time_str):
     # Якщо формат - YYYY/MM/DD HH:MM:SS
     try:
         parsed_time = datetime.strptime(time_str, "%Y/%m/%d %H:%M:%S")
+        parsed_time = parsed_time + timedelta(hours=1)
         # Скорочуємо до хвилини
         return parsed_time.replace(second=0, microsecond=0)
     except ValueError:
@@ -417,7 +421,7 @@ async def transaction_exists(user_address, time, action, amount, token, token_ad
         print(existing_transaction)
         return existing_transaction is not None
     except Exception as e:
-        curent_time = datetime.now()
+        curent_time = datetime.now() + timedelta(hours=1)
         print(curent_time)
         print(f"Error while checking transaction existence: {e}")
         return False
@@ -430,7 +434,7 @@ def get_addresses():
         addresses = session.query(Address).all()
         return [address.address for address in addresses]
     except Exception as e:
-        curent_time = datetime.now()
+        curent_time = datetime.now() + timedelta(hours=1)
         print(curent_time)
         print(f"An error occurred while accessing the database: {e}")
         return []
@@ -447,7 +451,7 @@ async def fetch_task(address):
             error_message = f"\u274C Problem Transaction Alert \u274C\n" \
                             f"An error with proxy."
             await send_message(error_message)
-            curent_time = datetime.now()
+            curent_time = datetime.now() + timedelta(hours=1)
             print(curent_time)
             print(f"An error with proxy: {e}.")
         finally:
@@ -462,7 +466,7 @@ async def send_alive_message(interval=7200):
             await send_message(".")
             print("Sent 'I am alive' message to Telegram.")
         except Exception as e:
-            curent_time = datetime.now()
+            curent_time = datetime.now() + timedelta(hours=1)
             print(curent_time)
             print(f"Error while sending 'I am alive' message: {e}")
         await asyncio.sleep(interval)  # Очікуємо заданий інтервал перед наступним повідомленням
@@ -482,7 +486,7 @@ if __name__ == "__main__":
         try:
             asyncio.run(main())
         except Exception as e:
-            curent_time = datetime.now()
+            curent_time = datetime.now() + timedelta(hours=1)
             print(curent_time)
-            print(f"Critical error: {e}. Restarting...")
+            print(f"!!!!!Critical error: {e}. Restarting...")
             time.sleep(5)
