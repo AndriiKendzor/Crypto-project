@@ -77,7 +77,7 @@ async def set_cookies(driver, url):
     driver.get(url)
 
     # Очікування завантаження сторінки
-    WebDriverWait(driver, 5).until(
+    WebDriverWait(driver, 20).until(
         EC.presence_of_element_located((By.TAG_NAME, "body"))
     )
 
@@ -103,6 +103,7 @@ async def parse_price(price_str):
         return float(clean_str.replace("B", "")) * 1_000_000_000
     else:
         return float(clean_str)
+
 
 async def press_load_more_button(driver):
     load_more_button = WebDriverWait(driver, 5).until(
@@ -140,7 +141,7 @@ async def get_data_from_user(driver, address):
         while not first_transaction and load_more_count <= 3:
             try:
                 # Спроба знайти першу транзакцію, яка не містить клас 'History_error'
-                first_transaction = WebDriverWait(driver, 10).until(
+                first_transaction = WebDriverWait(driver, 20).until(
                     EC.presence_of_element_located((By.XPATH, "//div[contains(@class, 'History_tableLine') and not(contains(@class, 'History_error'))]"))
                 )
             except:
@@ -186,34 +187,37 @@ async def get_data_from_user(driver, address):
             parsed_amount = "NOT FOUND"
             message_send = False
         else:
-            parsed_amount = await parse_price(amount)
-            message_send = False
-            if parsed_amount > 300:
-                # finding links
-                # if token_address != "NOT FOUND" and action == "execute":
-                #     try:
-                #         marketcap_link = await find_marketcap_link(driver, token_address)
-                #         uniswap_link = await find_uniswap_link(driver, token_address)
-                #     except Exception:
-                #         marketcap_link = "NOT FOUND"
-                #         uniswap_link = "NOT FOUND"
-                # else:
-                #     marketcap_link = "NOT FOUND"
-                #     uniswap_link = "NOT FOUND"
-
-                message = f"\ud83d\udea8 High Transaction Alert \ud83d\udea8\n" \
-                          f"USER: {address}\n" \
-                          f"Time: {time_of_tx_correct} \n" \
-                          f"Action: {action_text} \n" \
-                          f"Amount: {parsed_amount} $\n" \
-                          f"Token: {token}\n" \
-                          f"Token address: {token_address} \n\n"\
-                          f"Links: \n" \
-                          f"DeBank: https://debank.com/profile/{address}/history"
-                message_send = True
-            else:
+            try:
+                parsed_amount = await parse_price(amount)
                 message_send = False
+                if parsed_amount > 300:
+                    # finding links
+                    # if token_address != "NOT FOUND" and action == "execute":
+                    #     try:
+                    #         marketcap_link = await find_marketcap_link(driver, token_address)
+                    #         uniswap_link = await find_uniswap_link(driver, token_address)
+                    #     except Exception:
+                    #         marketcap_link = "NOT FOUND"
+                    #         uniswap_link = "NOT FOUND"
+                    # else:
+                    #     marketcap_link = "NOT FOUND"
+                    #     uniswap_link = "NOT FOUND"
 
+                    message = f"\ud83d\udea8 High Transaction Alert \ud83d\udea8\n" \
+                            f"USER: {address}\n" \
+                            f"Time: {time_of_tx_correct} \n" \
+                            f"Action: {action_text} \n" \
+                            f"Amount: {parsed_amount} $\n" \
+                            f"Token: {token}\n" \
+                            f"Token address: {token_address} \n\n"\
+                            f"Links: \n" \
+                            f"DeBank: https://debank.com/profile/{address}/history"
+                    message_send = True
+                else:
+                    message_send = False
+            except Exception as e:
+                message_send = False
+                print("Error with data to send (maybe amount=''): ", e)
 
 
         problem = any(field == "NOT FOUND" for field in [time_of_tx, amount, token, action_text, token_address])
@@ -406,18 +410,24 @@ async def parse_time(time_str):
 # Функція для перевірки існування транзакції
 async def transaction_exists(user_address, time, action, amount, token, token_address):
     try:
-        # Шукаємо транзакцію з подібними критеріями
-        existing_transaction = session.query(Transactions).filter_by(
+        # Створюємо базовий запит
+        query = session.query(Transactions).filter_by(
             user_address=user_address,
             action=action,
-            token=token,
-            token_address=token_address
+            token=token
         ).filter(
             Transactions.time.between(
                 time - timedelta(minutes=1),
                 time + timedelta(minutes=1)
             )
-        ).first()
+        )
+
+        # Якщо token_address не порожній, додаємо його до фільтра
+        if token_address != '':
+            query = query.filter_by(token_address=token_address)
+
+        # Виконуємо запит
+        existing_transaction = query.first()
         print(existing_transaction)
         return existing_transaction is not None
     except Exception as e:
